@@ -1,6 +1,8 @@
 # ebook-GPT-translator: Enjoy reading with your favorite style.
 [En](https://github.com/jesselau76/ebook-GPT-translator/blob/main/README.md) | [中文说明](https://github.com/jesselau76/ebook-GPT-translator/blob/main/README-zh.md)
 
+Note: LZY has edited this repo. Please check the `setting.cfg.example`
+
 This tool is designed to help users convert text from one format to another, as well as translate it into a different language using the OpenAI API (model="gpt-3.5-turbo"). It currently supports converting and translating PDF, DOCX, EPUB, and MOBI file formats into EPUB and text files and can translate text into multiple languages.
 
 Notes:
