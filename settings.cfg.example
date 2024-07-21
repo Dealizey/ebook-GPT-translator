@@ -2,14 +2,21 @@
 #API key(s) for OpenAI API, e.g. "sk-xxxxxx" or "sk-xxxxxx,sk-xxxxxx"
 openai-apikey = sk-
 
-#API Proxy Url, e.g. https://api.openai-proxy.com
+#API Proxy Url, e.g. https://api.openai-proxy.com/v1
 openai-proxy =
+
+# Proxy URL, e.g. http://127.0.0.1:10809
+network_proxy = 
+
+model = "gpt-4o-mini"
 
 #Target language for translation, e.g. "en", "zh-cn", "ja",or "繁体中文","文言文"
 # target-language setting is deprecated, please use prompt setting instead
 
 #set prompt, you can change Chinese to "en", "zh-cn", "ja", "繁体中文","文言文", or "红楼梦风格的半文言文" etc
-prompt = "Please behave like GPT-4 model, translate the following text into Chinese."
+prompt = "You are a professional translator. Translate the following text into Chinese. Ensure that the translation aligns with the target language's conventions and does not sound like a translation."
+
+max-length = 1024
 
 #Whether to output bilingual text or just translated text, set to "True" or "False"
 bilingual-output = True

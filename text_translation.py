@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
+import requests
 import pdfminer.high_level
 import re
-import openai
+# import openai
 from tqdm import tqdm
 # import nltk
 # nltk.download('punkt')
@@ -131,7 +132,8 @@ openai_apikey = config.get('option', 'openai-apikey')
 prompt = config.get('option', 'prompt')
 bilingual_output = config.get('option', 'bilingual-output')
 language_code = config.get('option', 'langcode')
-api_proxy=config.get('option', 'openai-proxy')
+api_base=config.get('option', 'openai-proxy')
+max_length = config.getint('option', 'max-length')
 # Get startpage and endpage as integers with default values
 startpage = config.getint('option', 'startpage', fallback=1)
 endpage = config.getint('option', 'endpage', fallback=-1)
@@ -139,9 +141,20 @@ endpage = config.getint('option', 'endpage', fallback=-1)
 transliteration_list_file = config.get('option', 'transliteration-list')
 # 译名表替换是否开启大小写匹配？
 case_matching = config.get('option', 'case-matching')
+# 使用模型
+model_to_use = config.get('option', 'model')
+# 网络代理
+network_proxy = config.get('option', 'network_proxy')
+if network_proxy:
+    proxies = {
+        'http': network_proxy,
+        'https': network_proxy
+    }
+else:
+    proxies = {}
 
 # 设置openai的API密钥
-openai.api_key = openai_apikey
+api_key = openai_apikey
 
 # 将openai的API密钥分割成数组
 key_array = openai_apikey.split(',')
@@ -149,28 +162,50 @@ key_array = openai_apikey.split(',')
 def random_api_key():
     return random.choice(key_array)
 
-def create_chat_completion(prompt, text, model="gpt-3.5-turbo", **kwargs):
-    openai.api_key = random_api_key()
-    return openai.ChatCompletion.create(
-        model=model,
-        messages=[
+def create_chat_completion(prompt, text):
+    api_key = random_api_key()
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}',
+    }
+    max_tokens = 2000 if "qwen" in model_to_use else 3000
+    data = {
+        'model': model_to_use,
+        'messages': [
             {
-                "role": "user",
-                "content": f"{prompt}: \n{text}",
-            }
+                'role': 'system',
+                'content': prompt,
+            },
+            {
+                'role': 'user',
+                'content': text,
+            },
         ],
-        **kwargs
+        'max_tokens': max_tokens,
+    }
+    response = requests.post(
+        f'{api_base}/chat/completions', 
+        headers=headers, 
+        data=json.dumps(data),
+        proxies=proxies
     )
+    completion = response.json()
+    return completion
 
 import argparse
 
 # 如果配置文件有写，就设置api代理
-if len(api_proxy) == 0:
-    print("未检测到OpenAI API 代理，当前使用api地址为: " + openai.api_base)
+# default: https://api.openai.com/v1
+if len(api_base) == 0:
+    api_base = "https://api.openai.com/v1"
+    print("未检测到OpenAI API 代理，当前使用api地址为: " + api_base)
 else:
-    api_proxy_url = api_proxy + "/v1"
-    openai.api_base = os.environ.get("OPENAI_API_BASE", api_proxy_url)
-    print("正在使用OpenAI API 代理，代理地址为: "+openai.api_base)
+    # api_proxy_url = api_proxy + "/v1"
+    api_base = api_base.strip("/")
+    if not api_base.endswith("v1"):
+        api_base = api_base + "/v1"
+    # openai.api_base = os.environ.get("OPENAI_API_BASE", api_proxy_url)
+    print("正在使用OpenAI API 代理，代理地址为: "+api_base)
 
 # 创建参数解析器
 parser = argparse.ArgumentParser()
@@ -277,7 +312,6 @@ def convert_pdf_to_text(pdf_filename, start_page=1, end_page=-1):
 # 将文本分成不大于1024字符的短文本list
 def split_text(text):
     sentence_list = re.findall(r'.+?[。！？!?.]', text)
-
     # 初始化短文本列表
     short_text_list = []
     # 初始化当前短文本
@@ -285,7 +319,7 @@ def split_text(text):
     # 遍历句子列表
     for s in sentence_list:
         # 如果当前短文本加上新的句子长度不大于1024，则将新的句子加入当前短文本
-        if len(short_text + s) <= 1024:
+        if len(short_text + s) <= max_length:
             short_text += s
         # 如果当前短文本加上新的句子长度大于1024，则将当前短文本加入短文本列表，并重置当前短文本为新的句子
         else:
@@ -316,11 +350,7 @@ def translate_text(text):
     try:
         completion = create_chat_completion(prompt, text)
         t_text = (
-            completion["choices"][0]
-            .get("message")
-            .get("content")
-            .encode("utf8")
-            .decode()
+            completion['choices'][0]['message']['content']
         )
         # Get the token usage from the API response
         cost_tokens += completion["usage"]["total_tokens"]
@@ -328,17 +358,13 @@ def translate_text(text):
     except Exception as e:
         import time
         # TIME LIMIT for open api please pay
-        sleep_time = 60
+        sleep_time = 10
         time.sleep(sleep_time)
         print(e, f"will sleep  {sleep_time} seconds")
 
         completion = create_chat_completion(prompt, text)
         t_text = (
-            completion["choices"][0]
-            .get("message")
-            .get("content")
-            .encode("utf8")
-            .decode()
+            completion['choices'][0]['message']['content']
         )
         # Get the token usage from the API response
         cost_tokens += completion["usage"]["total_tokens"]
@@ -463,7 +489,7 @@ if filename.endswith('.epub'):
 
             # 遍历短文本列表，依次翻译每个短文本
             for short_text in tqdm(short_text_list):
-                print(return_text(short_text))
+                # print(return_text(short_text))
                 count += 1
                 # 翻译当前短文本
                 translated_short_text = translate_and_store(short_text)
@@ -510,7 +536,7 @@ else:
 
     # 遍历短文本列表，依次翻译每个短文本
     for short_text in tqdm(short_text_list):
-        print(return_text(short_text))
+        # print(return_text(short_text))
         # 翻译当前短文本
         translated_short_text = translate_and_store(short_text)
         short_text = return_text(short_text)
@@ -525,14 +551,14 @@ else:
 
     # 将翻译后的文本写入epub文件
     with tqdm(total=10, desc="Writing translated text to epub") as pbar:
+        print(translated_text.replace('\n', '<br>').encode().decode())
         text_to_epub(translated_text.replace('\n', '<br>'), new_filename, language_code, title)
         pbar.update(1)
 
     # 将翻译后的文本同时写入txt文件 in case epub插件出问题
     with open(new_filenametxt, "w", encoding="utf-8") as f:
         f.write(translated_text)
-cost = cost_tokens / 1000 * 0.002
-print(f"Translation completed. Total cost: {cost_tokens} tokens, ${cost}.")
+print(f"Translation completed. Total cost: {cost_tokens} tokens.")
 
 try:
     os.remove(jsonfile)
